@@ -2,13 +2,9 @@
 #include <stdlib.h>
 
 /**
- * FreeRTOS Mutex Challenge
+ * Put code from src to here to compile it and flash it to the ESP-32
  * 
- * Pass a parameter to a task using a mutex.
- * 
- * Date: January 20, 2021
- * Author: Shawn Hymel
- * License: 0BSD
+ * Anything from /src is not read by the compiler
  */
 
 // You'll likely need this on vanilla FreeRTOS

@@ -81,9 +81,9 @@ void blinkStatus(void *parameters) {
   static int num = 0;
 
   //Try to add item to queue for 10 ticks, fail if queue is full
-  if (xQueueSend(msg_queue, (void*)&num, 10) != pdTRUE) {
-    Serial.println("Queue full");
-  }
+  // if (xQueueSend(msg_queue, (void*)&num, 10) != pdTRUE) {
+  //   Serial.println("Queue full");
+  // }
 
   num++;
   //Wait before trying again
@@ -108,7 +108,7 @@ void setup() {
   xTaskCreatePinnedToCore(blinkStatus,"Blink Status",1024, NULL, 1, NULL, app_cpu);
 
   //Delete setup and loop
-  xTaskDestroy()
+  //xTaskDestroy()
 
 }
 

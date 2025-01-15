@@ -3,7 +3,7 @@ import serial
 import time
 
 # Initialize serial communication with Arduino
-arduino = serial.Serial(port='COM3', baudrate=9600, timeout=1)  # Replace 'COM3' with your Arduino port
+arduino = serial.Serial(port='COM4', baudrate=115200, timeout=1)  # Replace 'COM3' with your Arduino port
 time.sleep(2)  # Wait for Arduino to initialize
 
 # Initialize pygame
@@ -18,10 +18,14 @@ print(f"Controller connected: {joystick.get_name()}")
 
 def send_command_to_arduino(command):
     arduino.write(f"{command}\n".encode())
-    print(f"Sent to Arduino: {command}")
+    print(f"Sent to ESP: {command}")
 
 try:
     while True:
+        
+        # Read ESP serial monitor
+        print(arduino.readline())
+        
         pygame.event.pump()  # Process input events
 
         # Read joystick inputs

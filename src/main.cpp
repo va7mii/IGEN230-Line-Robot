@@ -1,105 +1,187 @@
+//Robot code to run sensor array
+
+
 #include <Arduino.h>
-#include <stdlib.h>
 
-/**
- * Put code from src to here to compile it and flash it to the ESP-32
- * 
- * Anything from /src is not read by the compiler
- */
+double sensorValue1, sensorValue2 = 0.0;
+const int irPin0 = 26;  // Analog input pin that the ADC is connected to
+const int irPin1 = 25;
+const int irPin2 = 33;
+const int irPin3 = 32;
+const int irPin4 = 35;
+const int sensorWidth = 100; //sensor width in miliseconds
 
-// You'll likely need this on vanilla FreeRTOS
-//#include <semphr.h>
 
-// Use only core 1 for demo purposes
-#if CONFIG_FREERTOS_UNICORE
-  static const BaseType_t app_cpu = 0;
-#else
-  static const BaseType_t app_cpu = 1;
-#endif
+//Initialize motor pins
+const int ENA = 13;
+const int IN1 = 12;
+const int IN2 = 14;
+const int IN3 = 27;
+const int IN4 = 26;
+const int ENB  = 25;
 
-// Pins (change this if your Arduino board does not have LED_BUILTIN defined)
-static const int led_pin = 2;
+//Settings
+const int MAX_MOTOR_SPEED = 400;
+const int MAX_MESSAGE_LENGTH = 20;
 
-//Mutex
-static SemaphoreHandle_t mutex;
+//Globals
+static int leftSpeed = 0;
+static int rightSpeed = 0;
 
-//*****************************************************************************
-// Tasks
 
-// Blink LED based on rate passed by parameter
-void blinkLED(void *parameters) {
 
-  // Copy the parameter into a local variable
-  int num = *(int *)parameters;
+//Functions to control motors
+void leftMotor (int speed);
+void rightMotor (int speed);
+void leftBrake(int speed);
+void rightBrake(int speed);
+void leftStop(void);
+void rightStop(void);
+
+
+int sensorValue[5]; //sensor values raw
+int corrSensorValue[5]; //sensor value corrected
+int sensorCounter = 0;
+double curSensorSum[5]; //doing an array to record multiple values
+
+double findWeightedSum (int corrSensorValue[]);
+
+
+void setup() {
+  // initialize serial communications for ESP-32
+  Serial.begin(115200);
   
-  //Release mutex so the creating function can finish
-  xSemaphoreGive(mutex);
+  //Initialize IR sensor array
+  pinMode(irPin0, INPUT);
+  pinMode(irPin1, INPUT);
+  pinMode(irPin2, INPUT);
+  pinMode(irPin3, INPUT);
+  pinMode(irPin4, INPUT);
+}
 
-  // Print the parameter
-  Serial.print("Received: ");
-  Serial.println(num);
 
-  // Configure the LED pin
-  pinMode(led_pin, OUTPUT);
+void loop() {
+  // read the analog in value:
+  sensorValue[0] = analogRead(irPin0);
+  sensorValue[1] = analogRead(irPin1);
+  sensorValue[2] = analogRead(irPin2);
+  sensorValue[3] = analogRead(irPin3);
+  sensorValue[4] = analogRead(irPin4);
 
-  // Blink forever and ever
-  while (1) {
-    digitalWrite(led_pin, HIGH);
-    vTaskDelay(num / portTICK_PERIOD_MS);
-    digitalWrite(led_pin, LOW);
-    vTaskDelay(num / portTICK_PERIOD_MS);
+  //Read pot value (test)
+  //potValue = analogRead(potInPin);
+  
+  if (sensorCounter > sensorWidth) {
+    
+    for (int pin = 0; pin < 5; pin++) {
+      corrSensorValue[pin] = curSensorSum[pin]/sensorWidth;
+    }
+    
+    // print the results to the Serial Monitor:
+    for (int pin = 0; pin < 5; pin++) {
+      Serial.print("sensor");
+      Serial.print(pin);
+      Serial.print(" = ");
+      Serial.print(corrSensorValue[pin]);
+      Serial.print(", ");
+    }
+
+    double linePos = findWeightedSum(corrSensorValue);
+    Serial.print("Position: "); Serial.print(linePos);
+
+    Serial.println(""); //newline
+
+    //reset values
+    memset(curSensorSum, 0, sizeof(curSensorSum));
+    sensorCounter = 0;
+  } else {
+    curSensorSum[0] += sensorValue[0];
+    curSensorSum[1] += sensorValue[1];
+    curSensorSum[2] += sensorValue[2];
+    curSensorSum[3] += sensorValue[3];
+    curSensorSum[4] += sensorValue[4];
+  }
+  
+  sensorCounter++;
+  delay(5);
+}
+ 
+double findWeightedSum (int corrSensorValue[]) {
+  
+  double linePos = 0.0;
+  double totalSum = 0.0;
+  
+  //Calculates the weighted sum by going over each sensor reading
+  for (int pin = 0; pin < 5; pin++) {
+      linePos += pin * corrSensorValue[pin];
+      totalSum += corrSensorValue[pin];
+  }
+
+  linePos /= totalSum;
+
+  //Accoutning for every
+  if (totalSum < 0.000001) {
+    return 2.0;
+  } else {
+    return linePos;
+  }
+
+  
+}
+
+
+//Controls left motor speed; if negative, then switch direction then reverse
+void leftMotor (int speed) {
+  if (speed >= 0) {
+    analogWrite(ENA, speed);
+    digitalWrite(IN1, HIGH);
+    digitalWrite(IN2, LOW);
+  } else {
+    analogWrite(ENA, -speed);
+    digitalWrite(IN1, LOW);
+    digitalWrite(IN2, HIGH);
   }
 }
 
-//*****************************************************************************
-// Main (runs as its own task with priority 1 on core 1)
 
-void setup() {
-
-  long int delay_arg;
-
-  // Configure Serial
-  Serial.begin(115200);
-
-  // Wait a moment to start (so we don't miss Serial output)
-  vTaskDelay(1000 / portTICK_PERIOD_MS);
-  Serial.println();
-  Serial.println("---FreeRTOS Mutex Challenge---");
-  Serial.println("Enter a number for delay (milliseconds)");
-
-  //Create mutex before starting tasks
-  mutex = xSemaphoreCreateMutex();
-
-  //"Steal the mutex"
-  xSemaphoreTake(mutex, portMAX_DELAY);
-
-  // Wait for input from Serial
-  while (Serial.available() <= 0);
-
-
-  // Read integer value
-  delay_arg = Serial.parseInt();
-  Serial.print("Sending: ");
-  Serial.println(delay_arg);
-
-  // Start task 1
-  xTaskCreatePinnedToCore(blinkLED,
-                          "Blink LED",
-                          1024,
-                          (void *)&delay_arg,
-                          1,
-                          NULL,
-                          app_cpu);
-
-  // Show that we accomplished our task of passing the stack-based argument
-  Serial.println("Done!");
-
-  //Do nothing until mutex has been returned
-  xSemaphoreTake(mutex, portMAX_DELAY);
+//Controls right motor speed; if negative, then switch direction to reverse
+void rightMotor (int speed) {
+  if (speed >= 0) {
+    analogWrite(ENB, speed);
+    digitalWrite(IN3, HIGH);
+    digitalWrite(IN4, LOW);
+  } else {
+    analogWrite(ENB, -speed);
+    digitalWrite(IN3, LOW);
+    digitalWrite(IN4, HIGH);
+  }
 }
 
-void loop() {
-  
-  // Do nothing but allow yielding to lower-priority tasks
-  vTaskDelay(1000 / portTICK_PERIOD_MS);
+//Turns both IN1 and IN2 pins HIGH to brake left motor
+void leftBrake(int speed) {
+  analogWrite(ENA, speed);
+  digitalWrite(IN1, HIGH);
+  digitalWrite(IN2, HIGH);
+}
+
+//Turns both IN3 and IN4 pins to HIGH to brake right motor
+void rightBrake(int speed) {
+  analogWrite(ENB, speed);
+  digitalWrite(IN3, HIGH);
+  digitalWrite(IN2, HIGH);
+}
+
+
+//Turns both IN1 and IN2 pins LOW to stop left motor
+void leftStop(void) {
+  analogWrite(ENA, 0);
+  digitalWrite(IN1, LOW);
+  digitalWrite(IN2, HIGH);
+}
+
+//Turns both IN3 and IN4 pins to LOW to stop right motor
+void rightStop(void) {
+  analogWrite(ENB, 0);
+  digitalWrite(IN3, LOW);
+  digitalWrite(IN2, LOW);
 }

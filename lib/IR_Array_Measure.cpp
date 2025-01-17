@@ -11,6 +11,34 @@ const int irPin3 = 32;
 const int irPin4 = 35;
 const int sensorWidth = 100; //sensor width in miliseconds
 
+
+//Initialize motor pins
+const int ENA = 13;
+const int IN1 = 12;
+const int IN2 = 14;
+const int IN3 = 27;
+const int IN4 = 26;
+const int ENB  = 25;
+
+//Settings
+const int MAX_MOTOR_SPEED = 400;
+const int MAX_MESSAGE_LENGTH = 20;
+
+//Globals
+static int leftSpeed = 0;
+static int rightSpeed = 0;
+
+
+
+//Functions to control motors
+void leftMotor (int speed);
+void rightMotor (int speed);
+void leftBrake(int speed);
+void rightBrake(int speed);
+void leftStop(void);
+void rightStop(void);
+
+
 int sensorValue[5]; //sensor values raw
 int corrSensorValue[5]; //sensor value corrected
 int sensorCounter = 0;
@@ -99,4 +127,61 @@ double findWeightedSum (int corrSensorValue[]) {
   }
 
   
+}
+
+
+//Controls left motor speed; if negative, then switch direction then reverse
+void leftMotor (int speed) {
+  if (speed >= 0) {
+    analogWrite(ENA, speed);
+    digitalWrite(IN1, HIGH);
+    digitalWrite(IN2, LOW);
+  } else {
+    analogWrite(ENA, -speed);
+    digitalWrite(IN1, LOW);
+    digitalWrite(IN2, HIGH);
+  }
+}
+
+
+//Controls right motor speed; if negative, then switch direction to reverse
+void rightMotor (int speed) {
+  if (speed >= 0) {
+    analogWrite(ENB, speed);
+    digitalWrite(IN3, HIGH);
+    digitalWrite(IN4, LOW);
+  } else {
+    analogWrite(ENB, -speed);
+    digitalWrite(IN3, LOW);
+    digitalWrite(IN4, HIGH);
+  }
+}
+
+//Turns both IN1 and IN2 pins HIGH to brake left motor
+void leftBrake(int speed) {
+  analogWrite(ENA, speed);
+  digitalWrite(IN1, HIGH);
+  digitalWrite(IN2, HIGH);
+}
+
+//Turns both IN3 and IN4 pins to HIGH to brake right motor
+void rightBrake(int speed) {
+  analogWrite(ENB, speed);
+  digitalWrite(IN3, HIGH);
+  digitalWrite(IN2, HIGH);
+}
+
+
+//Turns both IN1 and IN2 pins LOW to stop left motor
+void leftStop(void) {
+  analogWrite(ENA, 0);
+  digitalWrite(IN1, LOW);
+  digitalWrite(IN2, HIGH);
+}
+
+//Turns both IN3 and IN4 pins to LOW to stop right motor
+void rightStop(void) {
+  analogWrite(ENB, 0);
+  digitalWrite(IN3, LOW);
+  digitalWrite(IN2, LOW);
 }

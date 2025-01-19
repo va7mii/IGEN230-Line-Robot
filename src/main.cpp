@@ -36,6 +36,9 @@ double blackSensorValues[5];
 const int irPins[] = {26,25,33,32,35};  // Analog input pin that the ADC is connected to
 const int sensorWidth = 100; //sensor width in miliseconds
 
+//Some things to check calibration
+
+
 
 //Configure Bluetooth
 String device_name = "ESP32-BT-Slave";

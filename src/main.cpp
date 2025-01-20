@@ -37,8 +37,8 @@ const int irPins[] = {26,25,33,32,35};  // Analog input pin that the ADC is conn
 const int sensorWidth = 100; //sensor width in miliseconds
 
 //Some things to check calibration
-
-
+int calibratedWhite = LOW;
+int calibratedBlack = LOW;
 
 //Configure Bluetooth
 String device_name = "ESP32-BT-Slave";
@@ -72,6 +72,9 @@ void leftBrake(int speed);
 void rightBrake(int speed);
 void leftStop(void);
 void rightStop(void);
+
+//Functions to calibrate IR
+void calibrateIR(void);
 
 //Read serial monitor and change motor speed based on user input
 //[l or r] [motor speed]
@@ -117,7 +120,12 @@ void readSerial(void *parameter) {
             break;
 
           case 'c':
-            //Calibrate IR sensor
+            if (!calibratedWhite) {
+              calibratedWhite = HIGH;
+            } else { //White base already calibrated
+              calibratedBlack = HIGH;
+            }
+            
 
           case 'm':
             //Switch to remote control using a Switch Pro controller
@@ -209,17 +217,19 @@ void setup() {
   //Activate bluetooth
   SerialBT.begin(device_name); 
 
+
+
   vTaskDelay(1000 / portTICK_PERIOD_MS); //wait for a second to let serial output work
   Serial.println("Bluetooth ready! Please connect a serial terminal from another device to the ESP32");
   SerialBT.println("Enter a speed");
 
-
-  //Initial calibration
-
-  //Create tasks
+  //Start bluetooth serial task
   xTaskCreatePinnedToCore(readSerial, "readSerial", 1024, NULL, 1, NULL, app_cpu);
-  xTaskCreatePinnedToCore(followLine, "followLine", 1024, NULL, 1, NULL, app_cpu);
+
+  //Create line follow tasks
   xTaskCreatePinnedToCore(readIR, "Read IR", 1024, NULL, 1, NULL, app_cpu);
+  xTaskCreatePinnedToCore(followLine, "followLine", 1024, NULL, 1, NULL, app_cpu);
+
 
   //Delete "setup and loop" task
   vTaskDelete(NULL);
@@ -288,13 +298,9 @@ void calibrateIR(void) {
 
   SerialBT.println("//////////////Initial calibration started!////// ");
   Serial.println("///////////////Initial calibration started!/////");
-
-
-
   //White track calibration
 
-  while (1)
-  {
+  while (!calibratedWhite) {
     // read the analog in value:
     for (int i = 0; i < 5; i++) {
       sensorValues[i] = analogRead(irPins[i]);
@@ -310,12 +316,64 @@ void calibrateIR(void) {
     }
 
     SerialBT.println();
-
     vTaskDelay(500 / portTICK_PERIOD_MS);
   }
 
+  
 
-  //Black line calibration
+  // Stores calibrated white base values
+  SerialBT.print("White base calibrated as: ");
+
+  for (int pin = 0; pin < 5; pin++) {
+      whiteSensorValues[pin] = sensorValues[pin];
+
+      SerialBT.print("sensor");
+      SerialBT.print(pin);
+      SerialBT.print(" = ");
+      SerialBT.print(sensorValues[pin]);
+      SerialBT.print(", ");
+      vTaskDelay(500 / portTICK_PERIOD_MS);
+  
+  }
+
+  vTaskDelay(1000 / portTICK_PERIOD_MS);
+
+
+
+
+ while (!calibratedBlack) {
+    // read the analog in value:
+    for (int i = 0; i < 5; i++) {
+      sensorValues[i] = analogRead(irPins[i]);
+    }
+
+    // print the results to the Serial Monitor:
+    for (int pin = 0; pin < 5; pin++) {
+      SerialBT.print("sensor");
+      SerialBT.print(pin);
+      SerialBT.print(" = ");
+      SerialBT.print(sensorValues[pin]);
+      SerialBT.print(", ");
+    }
+
+    SerialBT.println();
+  }
+
+  // Stores calibrated white base values
+  SerialBT.print("Black line calibrated as: ");
+
+  for (int pin = 0; pin < 5; pin++) {
+      blackSensorValues[pin] = sensorValues[pin];
+        
+      SerialBT.print("sensor");
+      SerialBT.print(pin);
+      SerialBT.print(" = ");
+      SerialBT.print(sensorValues[pin]);
+      SerialBT.print(", ");
+  
+  }
+
+  vTaskDelay(1000 / portTICK_PERIOD_MS);
 
 
 }

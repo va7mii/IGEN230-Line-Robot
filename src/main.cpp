@@ -36,13 +36,16 @@ double whiteSensorValues[5];
 double blackSensorValues[5];
 const int irPins[] = {26, 25, 35, 34,A0}; // Analog input pin that the ADC is connected to
 
+const int sensorWidth = 100; //sensor width in miliseconds
+
 //25, 33, 32, 35, 34,
 //16,17,5,18, (4,15) pwm
 
 
-int numPins = sizeof(irPins) / sizeof(int);
-const int sensorWidth = 100; //sensor width in miliseconds
 
+
+
+int numPins = sizeof(irPins) / sizeof(int);
 double targetPos = 2.0;
 
 //PID parameters
@@ -97,7 +100,7 @@ void rightStop(void);
 void calibrateIR(void);
 
 //Function to find weighted IR Sum
-double findWeightedSum(int SensorValue[]);
+double findWeightedSum(double sensorValue[]);
 
 //Read serial monitor and change motor speed based on user input
 //[l or r] [motor speed]
@@ -184,15 +187,56 @@ void readSerial(void *parameter) {
 
 }
 
+/*
+void slidingIRWindow (){
+   //Read pot value (test)
+  //potValue = analogRead(potInPin);
+  
+  if (sensorCounter > sensorWidth) {
+    
+    for (int pin = 0; pin < 5; pin++) {
+      corrSensorValue[pin] = curSensorSum[pin]/sensorWidth;
+    }
+    
+    // print the results to the Serial Monitor:
+    for (int pin = 0; pin < 5; pin++) {
+      Serial.print("sensor");
+      Serial.print(pin);
+      Serial.print(" = ");
+      Serial.print(corrSensorValue[pin]);
+      Serial.print(", ");
+    }
+
+    double linePos = findWeightedSum(corrSensorValue);
+    Serial.print("Position: "); Serial.print(linePos);
+
+    Serial.println(""); //newline
+
+    //reset values
+    memset(curSensorSum, 0, sizeof(curSensorSum));
+    sensorCounter = 0;
+  } else {
+    curSensorSum[0] += sensorValue[0];
+    curSensorSum[1] += sensorValue[1];
+    curSensorSum[2] += sensorValue[2];
+    curSensorSum[3] += sensorValue[3];
+    curSensorSum[4] += sensorValue[4];
+  }
+  
+  sensorCounter++;
+}
+*/
+
+
 //Task for PID line following
 void followLine(void *parameter){
   while (1) {
-    leftMotor(20);
+    leftMotor(10);
     rightMotor(10);
 
-    if (map(sensorValues[0],whiteSensorValues[4], blackSensorValues[0], 0, 255) >10) {
+    if (map(sensorValues[0],whiteSensorValues[4], blackSensorValues[0], 0, 255) >20) {
       leftMotor(0);
-    } else if (map(sensorValues[4],whiteSensorValues[4], blackSensorValues[4], 0, 255) > 10) {
+    } else if (map(sensorValues[4],whiteSensorValues[4], blackSensorValues[4], 0, 255) > 20) {
       rightMotor(0);
     }
   }
@@ -222,6 +266,10 @@ void readIR(void *parameter) {
       SerialBT.print(map(sensorValues[pin],whiteSensorValues[pin], blackSensorValues[pin], 0, 255));
       SerialBT.print(", ");
     }
+
+    // Prints weighted sum position
+    double linePos = findWeightedSum(sensorValues);
+    Serial.print("Position: "); Serial.print(linePos);
 
     SerialBT.println();
 
@@ -273,8 +321,8 @@ void setup() {
   xTaskCreatePinnedToCore(manualControl, "manualControl", 1024, NULL, 1, &manualHandle, app_cpu);
 
 
-  //Initially suspend the auto task
-  vTaskSuspend(autoHandle);
+  //Initially suspend the manual task
+  vTaskSuspend(manualHandle);
 
   //Delete "setup and loop" task
   vTaskDelete(NULL);
@@ -429,15 +477,15 @@ void calibrateIR(void) {
 }
 
 
-double findWeightedSum (int SensorValue[]) {
+double findWeightedSum (double sensorValues[]) {
   
   double linePos = 0.0;
   double totalSum = 0.0;
   
   //Calculates the weighted sum by going over each sensor reading
   for (int pin = 0; pin < numPins; pin++) {
-      linePos += pin * SensorValue[pin];
-      totalSum += SensorValue[pin];
+      linePos += pin * sensorValues[pin];
+      totalSum += sensorValues[pin];
   }
 
   linePos /= totalSum;
@@ -449,5 +497,4 @@ double findWeightedSum (int SensorValue[]) {
     return linePos;
   }
 
-  
 }

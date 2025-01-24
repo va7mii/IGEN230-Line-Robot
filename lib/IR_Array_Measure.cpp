@@ -106,15 +106,15 @@ void loop() {
   delay(5);
 }
  
-double findWeightedSum (int corrSensorValue[]) {
+double findWeightedSum (int SensorValue[]) {
   
   double linePos = 0.0;
   double totalSum = 0.0;
   
   //Calculates the weighted sum by going over each sensor reading
   for (int pin = 0; pin < 5; pin++) {
-      linePos += pin * corrSensorValue[pin];
-      totalSum += corrSensorValue[pin];
+      linePos += pin * SensorValue[pin];
+      totalSum += SensorValue[pin];
   }
 
   linePos /= totalSum;

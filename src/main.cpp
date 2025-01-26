@@ -34,6 +34,8 @@ const int ENB  = 4;
 double sensorValues[5];
 double whiteSensorValues[5];
 double blackSensorValues[5];
+double corrSensorValues[5]; //calibrated sensor values
+
 const int irPins[] = {26, 25, 35, 34,A0}; // Analog input pin that the ADC is connected to
 
 const int sensorWidth = 100; //sensor width in miliseconds
@@ -46,15 +48,19 @@ const int sensorWidth = 100; //sensor width in miliseconds
 
 
 int numPins = sizeof(irPins) / sizeof(int);
-double targetPos = 2.0;
+double linePos = 2.0;
 
 //PID parameters
-double p, i, d;
-float error, correction, sp;
 
-float Kp = 5;
+float Kp = 40;
 float Ki = 0;
 float Kd = 40;
+
+// Shared variables
+volatile float error = 0.0;         // Line position error
+volatile float controlOutput = 0.0; // PID output for motor adjustment
+volatile bool newSensorData = false; // Flag to indicate new sensor data
+
 
 //Some things to check calibration
 volatile int calibratedWhite = LOW;
@@ -82,9 +88,12 @@ BluetoothSerial SerialBT;
 const int MAX_MOTOR_SPEED = 400;
 const int MAX_MESSAGE_LENGTH = 20;
 
+int leftSpeed = 0;
+int rightSpeed = 0;
+
 //Globals
-static int leftSpeed = 0;
-static int rightSpeed = 0;
+static int manualleftSpeed = 0;
+static int manualrightSpeed = 0;
 
 
 
@@ -98,6 +107,9 @@ void rightStop(void);
 
 //Functions to calibrate IR
 void calibrateIR(void);
+
+//Function to calculate IR sensor values during
+void readIR(void);
 
 //Function to find weighted IR Sum
 double findWeightedSum(double sensorValue[]);
@@ -131,18 +143,51 @@ void readSerial(void *parameter) {
             number = atoi(tail);
 
             //Adjust speed
-            leftSpeed = number;
+            manualleftSpeed = number;
             SerialBT.print("Updated left motor speed to: " );
-            SerialBT.println(leftSpeed);
+            SerialBT.println(manualleftSpeed);
             break;
           case 'r':
             //Extracts number from input
             tail = message + 1;
             number = atoi(tail);
 
-            rightSpeed = number;
+            manualrightSpeed = number;
             SerialBT.print("Updated right motor speed to: " );
-            SerialBT.println(rightSpeed);
+            SerialBT.println(manualrightSpeed);
+            break;
+
+          case 'p':
+            //Extracts number from input
+            tail = message + 1;
+            number = atoi(tail);
+
+            //Adjust Kp
+            Kp = number;
+            SerialBT.print("Updated Kp to: " );
+            SerialBT.println(Kp);
+            break;
+
+          case 'i':
+            //Extracts number from input
+            tail = message + 1;
+            number = atoi(tail);
+
+            //Adjust Kp
+            Ki = number;
+            SerialBT.print("Updated Ki to: " );
+            SerialBT.println(Ki);
+            break;
+          
+          case 'd':
+            //Extracts number from input
+            tail = message + 1;
+            number = atoi(tail);
+
+            //Adjust Kp
+            Kd = number;
+            SerialBT.print("Updated Kd to: " );
+            SerialBT.println(Kd);
             break;
 
           case 'c':
@@ -231,49 +276,106 @@ void slidingIRWindow (){
 //Task for PID line following
 void followLine(void *parameter){
   while (1) {
-    leftMotor(10);
-    rightMotor(10);
 
-    if (map(sensorValues[0],whiteSensorValues[4], blackSensorValues[0], 0, 255) >20) {
-      leftMotor(0);
-    } else if (map(sensorValues[4],whiteSensorValues[4], blackSensorValues[4], 0, 255) > 20) {
-      rightMotor(0);
+      // PID variables
+    float integral = 0.0;
+    float prevError = 0.0;
+
+    while (true) {
+      // Wait for new sensor data
+      if (newSensorData) {
+        // Reset the new data flag
+        newSensorData = false;
+
+        // Calculate PID components
+        integral += error;                         // Accumulate error (integral term)
+        float derivative = error - prevError;      // Calculate rate of change (derivative term)
+        controlOutput = (Kp * error) + (Ki * integral) + (Kd * derivative); // PID output
+
+        // Save error for next iteration
+        prevError = error;
+      }
+
+
+
+      // Allow other tasks to run
+      vTaskDelay(pdMS_TO_TICKS(5)); // Adjust as needed for PID computation rate
     }
+  }
+}
+
+
+void sensorTask(void *parameter) {
+  while (true) {
+
+
+    for (int pin = 0; pin < numPins; pin++) {
+      sensorValues[pin] = analogRead(irPins[pin]);
+      corrSensorValues[pin] = map(sensorValues[pin], whiteSensorValues[pin], blackSensorValues[pin], 0, 255);
+
+      //Adjusting overshoot values
+      if (corrSensorValues[pin] < 0) {
+        corrSensorValues[pin] = 0;
+      }
+
+      if (corrSensorValues[pin] > 255) {
+        corrSensorValues[pin] = 0;
+      }
+    }
+
+    // print the results to the Serial Monitor:
+    /* for (int pin = 0; pin < numPins; pin++) {
+      SerialBT.print("sensor");
+      SerialBT.print(pin);
+      SerialBT.print(" = ");
+      SerialBT.print(corrSensorValues[pin]);
+      SerialBT.print(", ");
+    } */
+
+    // Prints weighted sum position
+    linePos = findWeightedSum(corrSensorValues);
+
+    // Update shared error value
+    error = 2.0 - linePos;  // Negative to align error direction with desired correction
+
+    // Set flag to indicate new sensor data
+    newSensorData = true;
+
+    Serial.println(linePos);
+
+    // Delay for sensor reading rate (e.g., 10 ms)
+    vTaskDelay(pdMS_TO_TICKS(10));
+  }
+}
+
+
+// Task: Motor Control Task
+void motorTask(void *parameter) {
+  const int baseSpeed = 75; // Base motor speed (PWM value)
+
+  while (true) {
+    // Calculate motor speeds based on PID control output
+    int leftMotorSpeed = baseSpeed + controlOutput;  // Reduce left motor speed
+    int rightMotorSpeed = baseSpeed - controlOutput; // Increase right motor speed
+
+    // Constrain speeds to valid PWM range (0-255)
+    leftMotorSpeed = constrain(leftMotorSpeed, -255, 255);
+    rightMotorSpeed = constrain(rightMotorSpeed, -255, 255);
+
+    leftMotor(leftMotorSpeed);
+    rightMotor(rightMotorSpeed);
+
+
+    // Allow other tasks to run
+    vTaskDelay(pdMS_TO_TICKS(10)); // Adjust motor update rate
   }
 }
 
 // Remote control mode
 void manualControl(void *parameter){
   while (1) {
-    leftMotor(leftSpeed);
-    rightMotor(rightSpeed);
-  }
-}
-
-
-void readIR(void *parameter) {
-  while (1) {
-    // read the analog in value:
-    for (int i = 0; i < numPins; i++) {
-      sensorValues[i] = analogRead(irPins[i]);
-    }
-
-    // print the results to the Serial Monitor:
-    for (int pin = 0; pin < numPins; pin++) {
-      SerialBT.print("sensor");
-      SerialBT.print(pin);
-      SerialBT.print(" = ");
-      SerialBT.print(map(sensorValues[pin],whiteSensorValues[pin], blackSensorValues[pin], 0, 255));
-      SerialBT.print(", ");
-    }
-
-    // Prints weighted sum position
-    double linePos = findWeightedSum(sensorValues);
-    Serial.print("Position: "); Serial.print(linePos);
-
-    SerialBT.println();
-
-    vTaskDelay(1000 / portTICK_PERIOD_MS);
+    leftMotor(manualleftSpeed);
+    rightMotor(manualrightSpeed);
   }
 }
 
@@ -316,8 +418,9 @@ void setup() {
   calibrateIR(); 
 
   //Create line follow tasks
-  xTaskCreatePinnedToCore(readIR, "Read IR", 1024, NULL, 1, NULL, app_cpu);
   xTaskCreatePinnedToCore(followLine, "followLine", 1024, NULL, 1, &autoHandle, app_cpu);
+  xTaskCreatePinnedToCore(motorTask, "motorTask", 1024, NULL, 1, &autoHandle, app_cpu);
+  xTaskCreatePinnedToCore(sensorTask, "sensorTask", 1024, NULL, 1, &autoHandle, app_cpu);
   xTaskCreatePinnedToCore(manualControl, "manualControl", 1024, NULL, 1, &manualHandle, app_cpu);
 
 
@@ -335,6 +438,7 @@ void loop() {
 
 
 
+//// HELPER FUNCTIONS ///////
 //Controls left motor speed; if negative, then switch direction then reverse
 void leftMotor (int speed) {
   if (speed >= 0) {
@@ -436,11 +540,20 @@ void calibrateIR(void) {
 
 
 
-// Calibrate black line values
- while (!calibratedBlack) {
+// Calibrate black line values (now take the max value)
+
+  int prevValues[5] = {0};
+
+  while (!calibratedBlack)
+  {
     // read the analog in value:
     for (int i = 0; i < numPins; i++) {
       sensorValues[i] = analogRead(irPins[i]);
+
+      //Don't touch if new value is lesser
+      if (sensorValues[i] < prevValues[i]) {
+        sensorValues[i] = prevValues[i];
+      }
     }
 
     // print the results to the Serial Monitor:
@@ -451,6 +564,8 @@ void calibrateIR(void) {
       SerialBT.print(" = ");
       SerialBT.print(sensorValues[pin]);
       SerialBT.print(", ");
+
+      prevValues[pin] = sensorValues[pin];
     }
 
     SerialBT.println();
@@ -471,7 +586,7 @@ void calibrateIR(void) {
   
   }
 
-  vTaskDelay(1000 / portTICK_PERIOD_MS);
+  vTaskDelay(500 / portTICK_PERIOD_MS);
 
 
 }
@@ -496,5 +611,37 @@ double findWeightedSum (double sensorValues[]) {
   } else {
     return linePos;
   }
+
+}
+
+
+void readIR () {
+  // read the analog in value:
+    for (int pin = 0; pin < numPins; pin++) {
+      sensorValues[pin] = analogRead(irPins[pin]);
+      corrSensorValues[pin] = map(sensorValues[pin], whiteSensorValues[pin], blackSensorValues[pin], 0, 255);
+
+      //Adjusting overshoot values
+      if (corrSensorValues[pin] < 0) {
+        corrSensorValues[pin] = 0;
+      }
+
+      if (corrSensorValues[pin] > 255) {
+        corrSensorValues[pin] = 0;
+      }
+    }
+
+    // print the results to the Serial Monitor:
+    /* for (int pin = 0; pin < numPins; pin++) {
+      SerialBT.print("sensor");
+      SerialBT.print(pin);
+      SerialBT.print(" = ");
+      SerialBT.print(corrSensorValues[pin]);
+      SerialBT.print(", ");
+    } */
+
+    // Prints weighted sum position
+    linePos = findWeightedSum(corrSensorValues);
+    SerialBT.print("Position: "); SerialBT.print(linePos);
 
 }

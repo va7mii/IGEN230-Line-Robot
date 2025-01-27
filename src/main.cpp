@@ -1,5 +1,5 @@
 //References
-//https://www.digikey.com/en/maker/projects/introduction-to-rtos-solution-to-part-2-freertos/b3f84c9c9455439ca2dcb8ccfce9dec5
+//Real-Time Operating System (RTOS) guide: https://www.digikey.com/en/maker/projects/introduction-to-rtos-solution-to-part-2-freertos/b3f84c9c9455439ca2dcb8ccfce9dec5
 //Example Sketches for BluetoothSerial and FreeRTOS on ESP32
 //PID source: https://www.teachmemicro.com/implementing-pid-for-a-line-follower-robot/
 
@@ -39,10 +39,6 @@ double corrSensorValues[5]; //calibrated sensor values
 const int irPins[] = {26, 25, 35, 34,A0}; // Analog input pin that the ADC is connected to
 
 const int sensorWidth = 100; //sensor width in miliseconds
-
-//25, 33, 32, 35, 34,
-//16,17,5,18, (4,15) pwm
-
 
 
 
@@ -251,6 +247,8 @@ void readSerial(void *parameter) {
 
 }
 
+// Didn't implement a moving average window implementation due to time constraint and messing up with some other concurrent tasks
+
 /*
 void slidingIRWindow (){
    //Read pot value (test)
@@ -296,7 +294,7 @@ void slidingIRWindow (){
 void followLine(void *parameter){
   while (1) {
 
-      // PID variables
+   // PID variables
     float integral = 0.0;
     float prevError = 0.0;
 
@@ -314,9 +312,6 @@ void followLine(void *parameter){
         // Save error for next iteration
         prevError = error;
       }
-
-
-
       // Allow other tasks to run
       vTaskDelay(pdMS_TO_TICKS(5)); // Adjust as needed for PID computation rate
     }
@@ -341,15 +336,6 @@ void sensorTask(void *parameter) {
         corrSensorValues[pin] = 0;
       }
     }
-
-    // print the results to the Serial Monitor:
-    /* for (int pin = 0; pin < numPins; pin++) {
-      SerialBT.print("sensor");
-      SerialBT.print(pin);
-      SerialBT.print(" = ");
-      SerialBT.print(corrSensorValues[pin]);
-      SerialBT.print(", ");
-    } */
 
     // Prints weighted sum position
     linePos = findWeightedSum(corrSensorValues);
@@ -425,8 +411,8 @@ void setup() {
 
 
 
-
-  vTaskDelay(1000 / portTICK_PERIOD_MS); //wait for a second to let serial output work
+  //Wait for a second to let serial output work
+  vTaskDelay(1000 / portTICK_PERIOD_MS);
   Serial.println("Bluetooth ready! Please connect a serial terminal from another device to the ESP32");
   SerialBT.println("Enter a speed");
 
@@ -514,10 +500,14 @@ void rightStop(void) {
   digitalWrite(IN2, LOW);
 }
 
+
+//A function called in setup() to calibrate the IR sensor before running the motors
 void calibrateIR(void) {
 
   SerialBT.println("//////////////Initial calibration started!////// ");
   Serial.println("///////////////Initial calibration started!/////");
+ 
+  
   //White track calibration
 
   while (!calibratedWhite) {
@@ -604,13 +594,11 @@ void calibrateIR(void) {
       SerialBT.print(", ");
   
   }
-
   vTaskDelay(500 / portTICK_PERIOD_MS);
-
 
 }
 
-
+// Finds a weighted sum (from 0.0 to 4.0) used to calculated error in PID calculation
 double findWeightedSum (double sensorValues[]) {
   
   double linePos = 0.0;
@@ -624,7 +612,7 @@ double findWeightedSum (double sensorValues[]) {
 
   linePos /= totalSum;
 
-  //Accoutning for every
+  //Accoutning for a divide by zero scenario
   if (totalSum < 0.000001) {
     return 2.0;
   } else {

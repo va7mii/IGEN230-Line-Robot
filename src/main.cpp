@@ -70,7 +70,7 @@ TaskHandle_t autoHandle = NULL;
 TaskHandle_t manualHandle = NULL;
 
 //Configure Bluetooth
-String device_name = "ESP32-BT-Slave";
+String device_name = "ESP32-ROBOT";
 
 // Check if Bluetooth is available
 #if !defined(CONFIG_BT_ENABLED) || !defined(CONFIG_BLUEDROID_ENABLED)
@@ -94,6 +94,8 @@ int rightSpeed = 0;
 //Globals
 static int manualleftSpeed = 0;
 static int manualrightSpeed = 0;
+
+int baseSpeed = 75; // Base motor speed (PWM value)
 
 
 
@@ -124,6 +126,7 @@ void readSerial(void *parameter) {
       static char message[MAX_MESSAGE_LENGTH];
       static unsigned int message_pos = 0;
 
+
       
       char inByte = SerialBT.read();
       char whichCommand = NULL; //command to be called
@@ -137,81 +140,97 @@ void readSerial(void *parameter) {
 
         //Check which command was called
         switch (message[0]) {
-          case 'l':
+          case 's': {
             //Extracts number from input
-            tail = message + 1;
-            number = atoi(tail);
+          tail = message + 1;
 
-            //Adjust speed
-            manualleftSpeed = number;
-            SerialBT.print("Updated left motor speed to: " );
-            SerialBT.println(manualleftSpeed);
-            break;
-          case 'r':
+          char* leftToken = strtok(tail, " ");
+          char *rightToken = strtok(NULL, " ");
+          //Adjust speed
+          manualleftSpeed = atoi(leftToken);
+          manualrightSpeed = atoi(rightToken);
+
+          SerialBT.print("Updated leftMotor to: " ); 
+          SerialBT.println(manualleftSpeed);
+          SerialBT.print("Updated rightMotor to: " ); 
+          SerialBT.println(manualrightSpeed);
+          break;
+        }
+
+        case 'b': {
             //Extracts number from input
-            tail = message + 1;
-            number = atoi(tail);
+          tail = message + 1;
+          number = atoi(tail);
 
-            manualrightSpeed = number;
-            SerialBT.print("Updated right motor speed to: " );
-            SerialBT.println(manualrightSpeed);
-            break;
-
-          case 'p':
-            //Extracts number from input
-            tail = message + 1;
-            number = atoi(tail);
-
-            //Adjust Kp
-            Kp = number;
-            SerialBT.print("Updated Kp to: " );
-            SerialBT.println(Kp);
-            break;
-
-          case 'i':
-            //Extracts number from input
-            tail = message + 1;
-            number = atoi(tail);
-
-            //Adjust Kp
-            Ki = number;
-            SerialBT.print("Updated Ki to: " );
-            SerialBT.println(Ki);
-            break;
+          //Adjust speed
+          baseSpeed = number;
+          SerialBT.print("Updated PID base speed to: " ); 
+          SerialBT.println(baseSpeed);
+          break;
+        }
           
-          case 'd':
-            //Extracts number from input
-            tail = message + 1;
-            number = atoi(tail);
+          
+        case 'p': {
+          //Extracts number from input
+          tail = message + 1;
+          number = atoi(tail);
 
-            //Adjust Kp
-            Kd = number;
-            SerialBT.print("Updated Kd to: " );
-            SerialBT.println(Kd);
-            break;
+          //Adjust Kp
+          Kp = number;
+          SerialBT.print("Updated Kp to: " );
+          SerialBT.println(Kp);
+          break;
+        }
 
-          case 'c':
-            if (!calibratedWhite) {
-              calibratedWhite = HIGH;
-            } else { //White base already calibrated
-              calibratedBlack = HIGH;
-            }
-            break;
+        case 'i':{
+          //Extracts number from input
+          tail = message + 1;
+          number = atoi(tail);
 
-          case 'm':
-            SerialBT.println("Manual mode toggled!");
-            vTaskSuspend(autoHandle);
-            vTaskResume(manualHandle);
+          //Adjust Kp
+          Ki = number;
+          SerialBT.print("Updated Ki to: " );
+          SerialBT.println(Ki);
+          break;
+        }
+        
+        case 'd': {
+          //Extracts number from input
+          tail = message + 1;
+          number = atoi(tail);
 
-            break;
+          //Adjust Kp
+          Kd = number;
+          SerialBT.print("Updated Kd to: " );
+          SerialBT.println(Kd);
+          break;
+        }
 
-          case 'a':
-            vTaskSuspend(manualHandle);
-            vTaskResume(autoHandle);
+        case 'c': {
+          if (!calibratedWhite) {
+            calibratedWhite = HIGH;
+          } else { //White base already calibrated
+            calibratedBlack = HIGH;
+          }
+          break;
 
-            break;
-          default:
-            SerialBT.println("Invalid command!");
+      }
+
+        case 'm': {
+          SerialBT.println("Manual mode toggled!");
+          vTaskSuspend(autoHandle);
+          vTaskResume(manualHandle);
+          break;
+        } 
+
+        case 'a': {
+          vTaskSuspend(manualHandle);
+          vTaskResume(autoHandle);
+          break;
+        }
+
+        default:
+          SerialBT.println("Invalid command!");
         }
 
 
@@ -350,8 +369,7 @@ void sensorTask(void *parameter) {
 
 
 // Task: Motor Control Task
-void motorTask(void *parameter) {
-  const int baseSpeed = 75; // Base motor speed (PWM value)
+void motorTask(void *parameter) {int baseSpeed = 75; // Base motor speed (PWM value) 
 
   while (true) {
     // Calculate motor speeds based on PID control output
@@ -404,6 +422,7 @@ void setup() {
   Serial.begin(115200);
   //Activate bluetooth
   SerialBT.begin(device_name); 
+
 
 
 
